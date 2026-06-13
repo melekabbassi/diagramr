@@ -1,6 +1,6 @@
 # diagramr
 
-Generate Mermaid class diagrams from source code. Point it at a Go repository and get a diagram showing your structs, interfaces, and relationships.
+Generate Mermaid class diagrams from source code. Point it at a Go repository and get an interactive diagram showing your structs, interfaces, and relationships.
 
 ```
 diagramr generate ./internal
@@ -39,14 +39,27 @@ go build -o diagramr ./cmd/diagramr
 # 1. Create a config file in your project
 diagramr init
 
-# 2. Validate the config
-diagramr validate
-
-# 3. Generate a diagram
+# 2. Generate a diagram — opens diagramr studio in the browser
 diagramr generate ./...
+
+# Skip the browser and print Mermaid source to stdout
+diagramr generate --no-open ./...
 ```
 
-The `init` command writes a `diagramr.config.yaml` with sensible defaults. The `generate` command walks the source tree, extracts types and relationships, and outputs a Mermaid class diagram.
+---
+
+## diagramr studio
+
+Running `generate` opens a local web UI automatically:
+
+- **Pan & zoom** — scroll to zoom, drag to pan
+- **Live editor** — edit Mermaid source directly; diagram updates as you type
+- **Live reload** — diagram re-renders whenever a `.go` file in the target directory changes
+- **Export** — download PNG or SVG, or copy the image / Mermaid source to clipboard
+- **Controls** — direction (TB / LR / RL / BT), theme (default / dark / forest / neutral), toggle methods / fields / private members
+- **Save** — writes the current Mermaid source back to `diagramr.mmd` in the project root
+
+The studio URL is printed to the terminal as a fallback if the browser window is closed.
 
 ---
 
@@ -56,8 +69,19 @@ The `init` command writes a `diagramr.config.yaml` with sensible defaults. The `
 |---------|-------------|
 | `diagramr init` | Create a `diagramr.config.yaml` in the current directory |
 | `diagramr validate` | Load and validate config, print a summary |
-| `diagramr generate [path]` | Generate a diagram from source at the given path |
+| `diagramr generate [path]` | Generate a diagram and open diagramr studio |
 | `diagramr version` | Print the version |
+
+### generate flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--lang` | `auto` | Source language (`auto`, `go`) |
+| `--format` | `mermaid` | Output format (`mermaid`, `json`) |
+| `--output`, `-o` | — | Write output to file instead of the studio |
+| `--no-open` | `false` | Skip the browser; print to stdout |
+| `--include-private` | `false` | Include unexported types and members |
+| `--max-nodes` | config | Cap the number of nodes in the diagram |
 
 ---
 
@@ -67,8 +91,8 @@ The `init` command writes a `diagramr.config.yaml` with sensible defaults. The `
 
 ```yaml
 # diagramr.config.yaml
-language: auto       # auto, go, ts
-format: mermaid      # mermaid, json, svg, png
+language: auto       # auto, go
+format: mermaid      # mermaid, json
 max_nodes: 200       # cap nodes to keep diagrams readable
 ```
 
@@ -95,26 +119,18 @@ For Go sources, diagramr uses the standard `go/ast` package to extract:
 | `embeds` | Anonymous struct embedding |
 | `implements` | Struct satisfies interface (structural, inferred) |
 | `uses` | Struct has a field of another type |
-| `imports` | Package-level import |
 
-Private fields and methods are excluded by default.
+Private fields and methods are excluded by default; pass `--include-private` to include them.
 
 ---
 
 ## Output formats
 
-| Format | Status |
-|--------|--------|
-| `mermaid` | Mermaid class diagram syntax |
+| Format | How |
+|--------|-----|
+| `mermaid` | Mermaid class diagram syntax (default) |
 | `json` | Raw graph IR (nodes + edges) |
-| `svg` | SVG image via `mmdc` |
-| `png` | PNG image via `mmdc` |
-
-SVG and PNG output require the [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli):
-
-```sh
-npm install -g @mermaid-js/mermaid-cli
-```
+| PNG / SVG | Export from diagramr studio (browser UI) |
 
 ---
 
@@ -143,9 +159,8 @@ CI runs on Linux, macOS, and Windows via GitHub Actions.
 - [x] Mermaid class diagram renderer
 - [x] CLI commands (`init`, `validate`, `generate`, `version`)
 - [x] Config file + env var support
-- [ ] Wire `generate` end-to-end (parser → renderer → output)
-- [ ] JSON / SVG / PNG output backends
-- [ ] Watch mode (`--watch`)
+- [x] diagramr studio (interactive browser UI with pan/zoom, editor, export, live reload)
+- [ ] JSON / SVG / PNG CLI output backends
 - [ ] TypeScript parser
 - [ ] Neovim plugin
 
