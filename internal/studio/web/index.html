@@ -144,6 +144,30 @@
     }
     #diagram-error .close-btn:hover { color: #fff; background: none; }
 
+    #diagram-loading {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      background: #1e1e1e;
+      color: #888;
+      font-size: 13px;
+      z-index: 10;
+    }
+    #diagram-loading.active { display: flex; }
+
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #333;
+      border-top-color: #888;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     #editor-pane {
       display: flex;
       flex-direction: column;
@@ -249,6 +273,10 @@
     <div id="pan-container">
       <div id="diagram-output"></div>
     </div>
+    <div id="diagram-loading">
+      <div class="spinner"></div>
+      <span>Rendering…</span>
+    </div>
     <div id="diagram-error">
       <button class="close-btn" id="btn-close-error" title="Dismiss">×</button>
       <span id="diagram-error-text"></span>
@@ -325,20 +353,20 @@
   async function renderDiagram(source) {
     if (!source || !source.trim()) return;
 
-    // Bug 4 fix: generation counter instead of renderPending boolean.
-    // If a newer render starts before this one finishes, we discard the stale result.
     const seq = ++renderSeq;
     const id = 'mg' + seq;
-    const errEl = document.getElementById('diagram-error');
+    const loadEl  = document.getElementById('diagram-loading');
+    const errEl   = document.getElementById('diagram-error');
     const errText = document.getElementById('diagram-error-text');
-    const out = document.getElementById('diagram-output');
+    const out     = document.getElementById('diagram-output');
 
-    // Parse first — if syntax is invalid, mermaid.parse() throws and we never
-    // call render(), so Mermaid can never produce a bomb SVG.
+    loadEl.classList.add('active');
+
     try {
       await mermaid.parse(source);
     } catch (parseErr) {
       if (seq !== renderSeq) return;
+      loadEl.classList.remove('active');
       out.innerHTML = '';
       errText.textContent = parseErr.message || 'Syntax error in diagram';
       errEl.style.display = 'block';
@@ -350,12 +378,14 @@
       if (seq !== renderSeq) return;
       out.innerHTML = fitSVGToPane(svg);
       errEl.style.display = 'none';
-      pz.zoom(1, { animate: false }); // reset to scale=1; SVG is already sized to fit
+      pz.zoom(1, { animate: false });
     } catch (e) {
       if (seq !== renderSeq) return;
       out.innerHTML = '';
       errText.textContent = e.message || String(e);
       errEl.style.display = 'block';
+    } finally {
+      loadEl.classList.remove('active');
     }
   }
 
