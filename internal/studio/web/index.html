@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>diagramr studio</title>
+  <link rel="stylesheet" href="/static/codemirror.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: #0f1117;
+      color: #c9d1d9;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      flex-wrap: wrap;
+    }
+
+    #toolbar .brand {
+      font-weight: 700;
+      color: #58a6ff;
+      margin-right: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    #toolbar .sep {
+      width: 1px;
+      height: 20px;
+      background: #30363d;
+      margin: 0 4px;
+    }
+
+    button, select {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover, select:hover { background: #30363d; }
+    button.primary { background: #238636; border-color: #2ea043; color: #fff; }
+    button.primary:hover { background: #2ea043; }
+    button.danger  { background: #6e2c2c; border-color: #8b3333; color: #ffa0a0; }
+    button.danger:hover  { background: #8b3333; }
+
+    #toast {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 100;
+    }
+    #toast.show { opacity: 1; }
+    #toast.error { border-color: #8b3333; color: #ffa0a0; }
+    #toast.success { border-color: #2ea043; color: #56d364; }
+
+    /* ── Workspace ───────────────────────────────────────── */
+    #workspace {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+    }
+
+    /* Bug 1 fix: cursor on the pane, not the SVG */
+    #diagram-pane {
+      overflow: hidden;
+      position: relative;
+      background: #0d1117;
+      border-right: 1px solid #30363d;
+      cursor: grab;
+    }
+    #diagram-pane:active { cursor: grabbing; }
+
+    /* Bug 1 fix: stable panzoom container fills the pane */
+    #pan-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Bug 1 fix: no max-width/max-height constraints that fight panzoom */
+    #diagram-output svg {
+      display: block;
+    }
+
+    #diagram-error {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      background: #2d1111;
+      border: 1px solid #8b3333;
+      border-radius: 6px;
+      padding: 8px 36px 8px 12px;
+      font-size: 12px;
+      color: #ffa0a0;
+      font-family: monospace;
+      display: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    /* Bug 4 fix: close button for the error div */
+    #diagram-error .close-btn {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      background: none;
+      border: none;
+      color: #ffa0a0;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    #diagram-error .close-btn:hover { color: #fff; background: none; }
+
+    #editor-pane {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0d1117;
+    }
+
+    #editor-label {
+      padding: 4px 10px;
+      font-size: 11px;
+      color: #6e7681;
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      user-select: none;
+    }
+
+    #editor-container {
+      flex: 1;
+      overflow: auto;
+    }
+
+    .CodeMirror {
+      height: 100%;
+      font-size: 13px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+
+    .CodeMirror-gutters { background: #0d1117; border-right: 1px solid #21262d; }
+    .CodeMirror-linenumber { color: #484f58; }
+    .CodeMirror-cursor { border-left-color: #58a6ff; }
+    .CodeMirror-selected { background: #264f78 !important; }
+    .CodeMirror-activeline-background { background: #161b22 !important; }
+
+    #dirty-badge {
+      display: none;
+      font-size: 10px;
+      background: #6e4c00;
+      color: #e3b341;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="brand">diagramr studio</span>
+  <div class="sep"></div>
+
+  <button id="btn-reset" class="danger" title="Reset editor to last generated source">Reset</button>
+  <button id="btn-save" class="primary" title="Save to .mmd file (Ctrl+S)">Save</button>
+
+  <div class="sep"></div>
+
+  <button id="btn-export-png" title="Download PNG">Export PNG</button>
+  <button id="btn-export-svg" title="Download SVG">Export SVG</button>
+
+  <div class="sep"></div>
+
+  <button id="btn-copy-img" title="Copy diagram as image to clipboard">Copy image</button>
+  <button id="btn-copy-mmd" title="Copy Mermaid source to clipboard">Copy Mermaid</button>
+
+  <div class="sep"></div>
+
+  <label for="sel-direction" style="color:#6e7681">Direction</label>
+  <select id="sel-direction">
+    <option value="TB">TB</option>
+    <option value="LR">LR</option>
+    <option value="BT">BT</option>
+    <option value="RL">RL</option>
+  </select>
+
+  <label for="sel-theme" style="color:#6e7681">Theme</label>
+  <select id="sel-theme">
+    <option value="default">Default</option>
+    <option value="dark">Dark</option>
+    <option value="forest">Forest</option>
+    <option value="neutral">Neutral</option>
+  </select>
+
+  <div class="sep"></div>
+
+  <label style="color:#6e7681;display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="chk-methods" checked> Methods
+  </label>
+  <label style="color:#6e7681;display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="chk-fields" checked> Fields
+  </label>
+  <label style="color:#6e7681;display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="chk-private"> Private
+  </label>
+
+  <div class="sep"></div>
+  <span id="dirty-badge">unsaved</span>
+</div>
+
+<div id="workspace">
+  <div id="diagram-pane">
+    <!-- Bug 1 fix: stable panzoom wrapper that persists across re-renders -->
+    <div id="pan-container">
+      <div id="diagram-output"></div>
+    </div>
+    <div id="diagram-error">
+      <button class="close-btn" id="btn-close-error" title="Dismiss">×</button>
+      <span id="diagram-error-text"></span>
+    </div>
+  </div>
+  <div id="editor-pane">
+    <div id="editor-label">Mermaid source</div>
+    <div id="editor-container"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/static/mermaid.min.js"></script>
+<script src="/static/codemirror.min.js"></script>
+<script src="/static/panzoom.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── State ───────────────────────────────────────────────
+  let generatedMermaid = '';
+  let editorDirty = false;
+  let suppressDirty = false; // Bug 5 fix: gate for programmatic setValue
+  let currentTheme = 'default';
+  let renderSeq = 0;         // Bug 4 fix: replace renderPending with a generation counter
+
+  const renderOpts = {
+    Direction: 'TB',
+    ShowMethods: true,
+    ShowFields: true,
+    ShowPrivate: false,
+    MaxNodes: 0,
+  };
+
+  // ── Mermaid init ────────────────────────────────────────
+  mermaid.initialize({ startOnLoad: false, theme: currentTheme, securityLevel: 'loose' });
+
+  // ── CodeMirror ──────────────────────────────────────────
+  const editor = CodeMirror(document.getElementById('editor-container'), {
+    value: '',
+    mode: 'markdown',
+    lineNumbers: true,
+    theme: 'default',
+    lineWrapping: true,
+    autofocus: false,
+    extraKeys: {
+      'Ctrl-S': saveMermaid,
+      'Cmd-S': saveMermaid,
+    },
+  });
+
+  // Bug 5 fix: helper that sets editor value without triggering dirty
+  function setEditorValue(value) {
+    suppressDirty = true;
+    editor.setValue(value);
+    suppressDirty = false;
+  }
+
+  let debounceTimer = null;
+  editor.on('change', function () {
+    // Bug 5 fix: ignore change events from programmatic setValue calls
+    if (!suppressDirty && !editorDirty) {
+      editorDirty = true;
+      document.getElementById('dirty-badge').style.display = 'inline';
+    }
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function () {
+      renderDiagram(editor.getValue());
+    }, 500);
+  });
+
+  // ── Diagram rendering ───────────────────────────────────
+  async function renderDiagram(source) {
+    if (!source || !source.trim()) return;
+
+    // Bug 4 fix: generation counter instead of renderPending boolean.
+    // If a newer render starts before this one finishes, we discard the stale result.
+    const seq = ++renderSeq;
+    const id = 'mg' + seq;
+    const errEl = document.getElementById('diagram-error');
+    const errText = document.getElementById('diagram-error-text');
+    const out = document.getElementById('diagram-output');
+
+    // Parse first — if syntax is invalid, mermaid.parse() throws and we never
+    // call render(), so Mermaid can never produce a bomb SVG.
+    try {
+      await mermaid.parse(source);
+    } catch (parseErr) {
+      if (seq !== renderSeq) return;
+      out.innerHTML = '';
+      errText.textContent = parseErr.message || 'Syntax error in diagram';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      const { svg } = await mermaid.render(id, source);
+      if (seq !== renderSeq) return;
+      out.innerHTML = fitSVGToPane(svg);
+      errEl.style.display = 'none';
+      pz.zoom(1, { animate: false }); // reset to scale=1; SVG is already sized to fit
+    } catch (e) {
+      if (seq !== renderSeq) return;
+      out.innerHTML = '';
+      errText.textContent = e.message || String(e);
+      errEl.style.display = 'block';
+    }
+  }
+
+  // ── Panzoom — Bug 1 fix ─────────────────────────────────
+  // Apply once to the stable #pan-container wrapper; never re-init on re-render.
+  const panContainer = document.getElementById('pan-container');
+  const diagramPane  = document.getElementById('diagram-pane');
+
+  const pz = Panzoom(panContainer, {
+    maxScale: 5,
+    minScale: 0.05,
+    step: 0.1,
+  });
+
+  // Wire wheel zoom once — no listener accumulation.
+  diagramPane.addEventListener('wheel', pz.zoomWithWheel, { passive: false });
+
+  // Rewrite the SVG's width/height to fit the diagram pane at 90% fill.
+  // Panzoom stays at scale=1; the SVG itself carries the right pixel dimensions.
+  function fitSVGToPane(svgString) {
+    const paneRect = diagramPane.getBoundingClientRect();
+    if (!paneRect.width || !paneRect.height) return svgString;
+
+    const vbMatch = svgString.match(/viewBox="([^"]+)"/);
+    if (!vbMatch) return svgString;
+    const parts = vbMatch[1].trim().split(/[\s,]+/);
+    const vbW = parseFloat(parts[2]);
+    const vbH = parseFloat(parts[3]);
+    if (!vbW || !vbH) return svgString;
+
+    const scale = Math.min(paneRect.width / vbW, paneRect.height / vbH) * 0.9;
+    const w = Math.round(vbW * scale);
+    const h = Math.round(vbH * scale);
+
+    return svgString
+      .replace(/\bwidth="[^"]*"/, `width="${w}"`)
+      .replace(/\bheight="[^"]*"/, `height="${h}"`);
+  }
+
+  // ── WebSocket ───────────────────────────────────────────
+  function connectWS() {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onmessage = function (e) {
+      generatedMermaid = e.data;
+      if (!editorDirty) {
+        setEditorValue(generatedMermaid); // Bug 5 fix: suppress dirty on WS updates
+        renderDiagram(generatedMermaid);
+      }
+    };
+    ws.onclose = function () { setTimeout(connectWS, 2000); };
+  }
+  connectWS();
+
+  // ── Toolbar actions ─────────────────────────────────────
+  document.getElementById('btn-reset').addEventListener('click', function () {
+    editorDirty = false;
+    document.getElementById('dirty-badge').style.display = 'none';
+    setEditorValue(generatedMermaid); // Bug 5 fix
+    renderDiagram(generatedMermaid);
+  });
+
+  document.getElementById('btn-save').addEventListener('click', saveMermaid);
+
+  // Bug 4 fix: close button for error div
+  document.getElementById('btn-close-error').addEventListener('click', function () {
+    document.getElementById('diagram-error').style.display = 'none';
+  });
+
+  function saveMermaid() {
+    fetch('/save', {
+      method: 'POST',
+      body: editor.getValue(),
+    }).then(function (r) {
+      if (r.ok) {
+        editorDirty = false;
+        document.getElementById('dirty-badge').style.display = 'none';
+        showToast('Saved', 'success');
+      } else {
+        showToast('Save failed', 'error');
+      }
+    }).catch(function () {
+      showToast('Save failed', 'error');
+    });
+  }
+
+  // ── Export — Bugs 2 & 3 fix ─────────────────────────────
+  // Get a cloned SVG with explicit pixel dimensions from the live bounding rect.
+  function getExportSVG() {
+    const svgEl = document.querySelector('#diagram-output svg');
+    if (!svgEl) return null;
+    const rect = svgEl.getBoundingClientRect();
+    const w = Math.round(rect.width)  || 1200;
+    const h = Math.round(rect.height) || 900;
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    clone.style.maxWidth  = '';
+    clone.style.maxHeight = '';
+    return { clone, w, h };
+  }
+
+  document.getElementById('btn-export-png').addEventListener('click', function () {
+    svgToPngBlob(function (blob) {
+      if (!blob) return showToast('Export failed — render a diagram first', 'error');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'diagramr-' + Date.now() + '.png';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    });
+  });
+
+  document.getElementById('btn-export-svg').addEventListener('click', function () {
+    const res = getExportSVG();
+    if (!res) return showToast('Export failed — render a diagram first', 'error');
+    const data = '<?xml version="1.0" encoding="utf-8"?>' +
+                 new XMLSerializer().serializeToString(res.clone);
+    const blob = new Blob([data], { type: 'image/svg+xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'diagramr-' + Date.now() + '.svg';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+  });
+
+  document.getElementById('btn-copy-img').addEventListener('click', function () {
+    svgToPngBlob(async function (blob) {
+      if (!blob) return showToast('Copy failed — render a diagram first', 'error');
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        showToast('Image copied', 'success');
+      } catch (_) {
+        showToast('Clipboard API not available in this browser', 'error');
+      }
+    });
+  });
+
+  document.getElementById('btn-copy-mmd').addEventListener('click', function () {
+    navigator.clipboard.writeText(editor.getValue())
+      .then(function () { showToast('Mermaid source copied', 'success'); })
+      .catch(function () { showToast('Copy failed', 'error'); });
+  });
+
+  // Bug 2 fix: use bounding rect for dimensions; always 2× scale for crisp export.
+  function svgToPngBlob(cb) {
+    const res = getExportSVG();
+    if (!res) { cb(null); return; }
+    const { clone, w, h } = res;
+    const svgData = '<?xml version="1.0" encoding="utf-8"?>' +
+                    new XMLSerializer().serializeToString(clone);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = function () {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width  = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, w * scale, h * scale);
+      canvas.toBlob(cb, 'image/png');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); cb(null); };
+    img.src = url;
+  }
+
+  // ── Style controls ──────────────────────────────────────
+  document.getElementById('sel-direction').addEventListener('change', function () {
+    renderOpts.Direction = this.value;
+    postRender();
+  });
+
+  document.getElementById('sel-theme').addEventListener('change', function () {
+    currentTheme = this.value;
+    mermaid.initialize({ startOnLoad: false, theme: currentTheme, securityLevel: 'loose' });
+    renderDiagram(editor.getValue());
+  });
+
+  document.getElementById('chk-methods').addEventListener('change', function () {
+    renderOpts.ShowMethods = this.checked;
+    postRender();
+  });
+  document.getElementById('chk-fields').addEventListener('change', function () {
+    renderOpts.ShowFields = this.checked;
+    postRender();
+  });
+  document.getElementById('chk-private').addEventListener('change', function () {
+    renderOpts.ShowPrivate = this.checked;
+    postRender();
+  });
+
+  function postRender() {
+    fetch('/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(renderOpts),
+    }).then(function (r) {
+      if (!r.ok) showToast('Re-render failed', 'error');
+    }).catch(function () {
+      showToast('Re-render failed', 'error');
+    });
+  }
+
+  // ── Toast ───────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'show ' + (type || '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.className = ''; }, 2500);
+  }
+
+  // ── Keyboard shortcut ───────────────────────────────────
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveMermaid();
+    }
+  });
+})();
+</script>
+</body>
+</html>

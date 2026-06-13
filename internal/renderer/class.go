@@ -16,6 +16,9 @@ func (r *ClassRenderer) Type() string  { return "class" }
 func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, error) {
 	var b strings.Builder
 	b.WriteString("classDiagram\n")
+	if opts.Direction != "" {
+		fmt.Fprintf(&b, "  direction %s\n", opts.Direction)
+	}
 
 	ids := make([]string, 0, len(g.Nodes))
 	for id := range g.Nodes {
@@ -50,9 +53,9 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 				}
 				prefix := visPrefix(f.Visibility)
 				if f.IsEmbedded {
-					b.WriteString(fmt.Sprintf("    %s%s\n", prefix, sanitizeType(f.Type)))
+					fmt.Fprintf(&b, "    %s%s\n", prefix, sanitizeType(f.Type))
 				} else {
-					b.WriteString(fmt.Sprintf("    %s%s %s\n", prefix, sanitizeType(f.Type), f.Name))
+					fmt.Fprintf(&b, "    %s%s %s\n", prefix, sanitizeType(f.Type), f.Name)
 				}
 			}
 		}
@@ -66,9 +69,9 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 				params := formatParams(m.Params)
 				ret := formatReturns(m.Returns)
 				if ret == "" {
-					b.WriteString(fmt.Sprintf("    %s%s(%s)\n", prefix, m.Name, params))
+					fmt.Fprintf(&b, "    %s%s(%s)\n", prefix, m.Name, params)
 				} else {
-					b.WriteString(fmt.Sprintf("    %s%s(%s) %s\n", prefix, m.Name, params, ret))
+					fmt.Fprintf(&b, "    %s%s(%s) %s\n", prefix, m.Name, params, ret)
 				}
 			}
 		}
@@ -87,18 +90,18 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 		to := sanitize(e.To)
 		switch e.Relation {
 		case graph.RelImplements:
-			b.WriteString(fmt.Sprintf("  %s ..|> %s : implements\n", from, to))
+			fmt.Fprintf(&b, "  %s ..|> %s : implements\n", from, to)
 		case graph.RelEmbeds:
-			b.WriteString(fmt.Sprintf("  %s --|> %s : embeds\n", from, to))
+			fmt.Fprintf(&b, "  %s --|> %s : embeds\n", from, to)
 		case graph.RelUses:
-			b.WriteString(fmt.Sprintf("  %s --> %s : uses\n", from, to))
+			fmt.Fprintf(&b, "  %s --> %s : uses\n", from, to)
 		case graph.RelImports:
 			// omitted — package-level imports are too noisy in a class diagram
 		}
 	}
 
 	if truncated {
-		b.WriteString(fmt.Sprintf("  %%%% truncated to %d nodes\n", opts.MaxNodes))
+		fmt.Fprintf(&b, "  %%%% truncated to %d nodes\n", opts.MaxNodes)
 	}
 
 	return b.String(), nil

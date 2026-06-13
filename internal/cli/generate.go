@@ -10,6 +10,7 @@ import (
 	base "github.com/melekabbassi/diagramr/internal/parser"
 	golangparser "github.com/melekabbassi/diagramr/internal/parser/golang"
 	"github.com/melekabbassi/diagramr/internal/renderer"
+	"github.com/melekabbassi/diagramr/internal/studio"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ func newGenerateCmd() *cobra.Command {
 		outputPath     string
 		includePrivate bool
 		maxNodes       int
+		noOpen         bool
 	)
 
 	cmd := &cobra.Command{
@@ -55,7 +57,10 @@ func newGenerateCmd() *cobra.Command {
 				IncludePrivate: includePrivate,
 			}
 
-			var content string
+			var (
+				content  string
+				rendOpts renderer.Options
+			)
 
 			switch lang {
 			case "go":
@@ -66,7 +71,7 @@ func newGenerateCmd() *cobra.Command {
 
 				switch format {
 				case "mermaid":
-					rendOpts := renderer.Options{
+					rendOpts = renderer.Options{
 						ShowMethods: true,
 						ShowFields:  true,
 						ShowPrivate: includePrivate,
@@ -89,7 +94,32 @@ func newGenerateCmd() *cobra.Command {
 				return fmt.Errorf("unsupported language %q (available: go)", lang)
 			}
 
-			return output.Write(outputPath, content, cmd.OutOrStdout())
+			// Write to file only when --output was explicitly given.
+			if outputPath != "" {
+				if err := output.Write(outputPath, content, cmd.OutOrStdout()); err != nil {
+					return err
+				}
+			}
+
+			if !noOpen && format == "mermaid" {
+				// Studio displays and exports the diagram — skip stdout entirely.
+				return studio.Serve(studio.Config{
+					InitialMermaid: content,
+					OutputPath:     outputPath,
+					RenderConfig: studio.RenderConfig{
+						RootPath:   rootPath,
+						Lang:       lang,
+						ParseOpts:  opts,
+						RenderOpts: rendOpts,
+					},
+				})
+			}
+
+			// --no-open path: write to stdout when no --output file was given.
+			if outputPath == "" {
+				return output.Write("", content, cmd.OutOrStdout())
+			}
+			return nil
 		},
 	}
 
@@ -98,6 +128,7 @@ func newGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (default: stdout)")
 	cmd.Flags().BoolVar(&includePrivate, "include-private", false, "Include unexported types and members")
 	cmd.Flags().IntVar(&maxNodes, "max-nodes", 0, "Maximum number of nodes (0 = use config value)")
+	cmd.Flags().BoolVar(&noOpen, "no-open", false, "Skip opening the browser after generation")
 
 	return cmd
 }
