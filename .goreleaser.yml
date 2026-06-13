@@ -1,0 +1,5 @@
+project_name: diagramr
+builds:
+  - main: ./cmd/diagramr
+archives:
+  - formats: [tar.gz]
