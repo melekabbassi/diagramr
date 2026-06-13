@@ -36,7 +36,7 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 
 	for _, id := range ids {
 		n := g.Nodes[id]
-		label := sanitize(n.Label)
+		label := sanitize(id) // fully-qualified to avoid cross-package name collisions
 		b.WriteString("  class " + label + " {\n")
 
 		if n.Kind == graph.KindInterface {
@@ -50,9 +50,9 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 				}
 				prefix := visPrefix(f.Visibility)
 				if f.IsEmbedded {
-					b.WriteString(fmt.Sprintf("    %s%s\n", prefix, sanitize(f.Type)))
+					b.WriteString(fmt.Sprintf("    %s%s\n", prefix, sanitizeType(f.Type)))
 				} else {
-					b.WriteString(fmt.Sprintf("    %s%s %s\n", prefix, sanitize(f.Type), f.Name))
+					b.WriteString(fmt.Sprintf("    %s%s %s\n", prefix, sanitizeType(f.Type), f.Name))
 				}
 			}
 		}
@@ -83,8 +83,8 @@ func (r *ClassRenderer) Render(g *graph.DiagramGraph, opts Options) (string, err
 		if _, ok := visible[e.To]; !ok {
 			continue
 		}
-		from := sanitize(nodeLabel(g, e.From))
-		to := sanitize(nodeLabel(g, e.To))
+		from := sanitize(e.From)
+		to := sanitize(e.To)
 		switch e.Relation {
 		case graph.RelImplements:
 			b.WriteString(fmt.Sprintf("  %s ..|> %s : implements\n", from, to))
@@ -111,21 +111,32 @@ func visPrefix(v graph.Visibility) string {
 	return "-"
 }
 
+// sanitize makes a string safe for use as a Mermaid class identifier.
 func sanitize(s string) string {
-	return strings.NewReplacer(
-		".", "_", " ", "_", "/", "_",
-		"[", "", "]", "", "*", "",
-		"{", "", "}", "",
-	).Replace(s)
+	return strings.NewReplacer(".", "_", " ", "_", "/", "_").Replace(s)
+}
+
+// sanitizeType converts a Go type string into a Mermaid-safe representation.
+func sanitizeType(t string) string {
+	if strings.HasPrefix(t, "[]") {
+		return sanitizeType(t[2:]) + "[]"
+	}
+	if strings.HasPrefix(t, "*") {
+		return sanitizeType(t[1:])
+	}
+	if strings.HasPrefix(t, "map[") {
+		return "Map"
+	}
+	return strings.NewReplacer(".", "_", " ", "_", "/", "_").Replace(t)
 }
 
 func formatParams(params []graph.Param) string {
 	parts := make([]string, 0, len(params))
 	for _, p := range params {
 		if p.Name == "" {
-			parts = append(parts, sanitize(p.Type))
+			parts = append(parts, sanitizeType(p.Type))
 		} else {
-			parts = append(parts, p.Name+" "+sanitize(p.Type))
+			parts = append(parts, p.Name+" "+sanitizeType(p.Type))
 		}
 	}
 	return strings.Join(parts, ", ")
@@ -134,15 +145,7 @@ func formatParams(params []graph.Param) string {
 func formatReturns(returns []string) string {
 	sanitized := make([]string, len(returns))
 	for i, r := range returns {
-		sanitized[i] = sanitize(r)
+		sanitized[i] = sanitizeType(r)
 	}
 	return strings.Join(sanitized, ", ")
-}
-
-func nodeLabel(g *graph.DiagramGraph, id string) string {
-	if n, ok := g.Nodes[id]; ok {
-		return n.Label
-	}
-	parts := strings.Split(id, ".")
-	return parts[len(parts)-1]
 }
